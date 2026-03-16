@@ -2,10 +2,9 @@ package handler
 
 import (
 	"net/http"
-	"strconv"
-
 	"ssu-bench-api/internal/models"
 	"ssu-bench-api/internal/service"
+	"strconv"
 
 	"github.com/gin-gonic/gin"
 )
@@ -68,38 +67,34 @@ func (h *TaskHandler) CreateTask(c *gin.Context) {
 		c.JSON(http.StatusForbidden, gin.H{"error": "only customers can create tasks"})
 		return
 	}
-
 	userID, err := getUserIDFromContext(c)
 	if err != nil || userID <= 0 {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid user_id"})
 		return
 	}
-
 	var req models.CreateTaskRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-
 	ctx := c.Request.Context()
 	task, err := h.taskService.CreateTask(ctx, userID, &req)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-
 	c.JSON(http.StatusCreated, task)
 }
 
 // GetTasks возвращает список задач с пагинацией и фильтрами
 // GET /api/v1/tasks?page=1&limit=20&status=open&customer=123
 func (h *TaskHandler) GetTasks(c *gin.Context) {
+
 	var query models.ListTasksQuery
 	if err := c.ShouldBindQuery(&query); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-
 	// Устанавливаем значения по умолчанию (Gin не делает это автоматически для form-тегов)
 	if query.Page < 1 {
 		query.Page = 1
@@ -107,14 +102,12 @@ func (h *TaskHandler) GetTasks(c *gin.Context) {
 	if query.Limit < 1 || query.Limit > 100 {
 		query.Limit = 20
 	}
-
 	ctx := c.Request.Context()
 	tasks, total, err := h.taskService.ListTasks(ctx, query)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-
 	c.JSON(http.StatusOK, gin.H{
 		"tasks": tasks,
 		"pagination": gin.H{
@@ -133,7 +126,6 @@ func (h *TaskHandler) GetTask(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid task id"})
 		return
 	}
-
 	ctx := c.Request.Context()
 	task, err := h.taskService.GetTask(ctx, id)
 	if err != nil {
@@ -144,7 +136,6 @@ func (h *TaskHandler) GetTask(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-
 	c.JSON(http.StatusOK, task)
 }
 
@@ -156,32 +147,27 @@ func (h *TaskHandler) CreateBid(c *gin.Context) {
 		c.JSON(http.StatusForbidden, gin.H{"error": "only executors can create bids"})
 		return
 	}
-
 	userID, err := getUserIDFromContext(c)
 	if err != nil || userID <= 0 {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid user_id"})
 		return
 	}
-
 	taskID, err := strconv.Atoi(c.Param("id"))
 	if err != nil || taskID <= 0 {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid task id"})
 		return
 	}
-
 	var req models.CreateBidRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-
 	ctx := c.Request.Context()
 	bid, err := h.bidService.CreateBid(ctx, userID, taskID, &req)
 	if err != nil {
 		c.JSON(http.StatusConflict, gin.H{"error": err.Error()})
 		return
 	}
-
 	c.JSON(http.StatusCreated, bid)
 }
 
@@ -197,31 +183,26 @@ func (h *TaskHandler) SelectBid(c *gin.Context) {
 		c.JSON(http.StatusForbidden, gin.H{"error": "only task owner can select bid"})
 		return
 	}
-
 	userID, err := getUserIDFromContext(c)
 	if err != nil || userID <= 0 {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid user_id"})
 		return
 	}
-
 	taskID, err := strconv.Atoi(c.Param("id"))
 	if err != nil || taskID <= 0 {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid task id"})
 		return
 	}
-
 	var req models.SelectBidRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-
 	ctx := c.Request.Context()
 	if err := h.taskService.SelectBid(ctx, taskID, userID, req.BidID); err != nil {
 		c.JSON(http.StatusConflict, gin.H{"error": err.Error()})
 		return
 	}
-
 	c.JSON(http.StatusOK, gin.H{"message": "bid selected", "bid_id": req.BidID})
 }
 
@@ -230,7 +211,7 @@ func (h *TaskHandler) SelectBid(c *gin.Context) {
 // 1. Проверка прав заказчика
 // 2. Проверка статуса задачи и отклика
 // 3. Проверка баланса заказчика
-// 4. Списывание баллов у заказчика
+// 4. Списание баллов у заказчика
 // 5. Начисление баллов исполнителю
 // 6. Запись платежа в историю
 // 7. Обновление статуса задачи на "completed"
@@ -241,19 +222,16 @@ func (h *TaskHandler) ConfirmCompletion(c *gin.Context) {
 		c.JSON(http.StatusForbidden, gin.H{"error": "only task owner can confirm completion"})
 		return
 	}
-
 	userID, err := getUserIDFromContext(c)
 	if err != nil || userID <= 0 {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid user_id"})
 		return
 	}
-
 	taskID, err := strconv.Atoi(c.Param("id"))
 	if err != nil || taskID <= 0 {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid task id"})
 		return
 	}
-
 	ctx := c.Request.Context()
 	result, err := h.paymentService.ProcessReward(ctx, taskID, userID)
 	if err != nil {
@@ -264,12 +242,10 @@ func (h *TaskHandler) ConfirmCompletion(c *gin.Context) {
 		c.JSON(http.StatusConflict, gin.H{"error": err.Error()})
 		return
 	}
-
 	if !result.Success {
 		c.JSON(http.StatusPaymentRequired, gin.H{"error": "insufficient balance"})
 		return
 	}
-
 	c.JSON(http.StatusOK, gin.H{
 		"message":      "completion confirmed, payment processed",
 		"from_balance": result.FromBalance,
@@ -288,25 +264,21 @@ func (h *TaskHandler) CancelTask(c *gin.Context) {
 		c.JSON(http.StatusForbidden, gin.H{"error": "only task owner can cancel"})
 		return
 	}
-
 	userID, err := getUserIDFromContext(c)
 	if err != nil || userID <= 0 {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid user_id"})
 		return
 	}
-
 	taskID, err := strconv.Atoi(c.Param("id"))
 	if err != nil || taskID <= 0 {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid task id"})
 		return
 	}
-
 	ctx := c.Request.Context()
 	if err := h.taskService.UpdateTaskStatus(ctx, taskID, userID, models.TaskStatusCancelled); err != nil {
 		c.JSON(http.StatusConflict, gin.H{"error": err.Error()})
 		return
 	}
-
 	c.JSON(http.StatusOK, gin.H{"message": "task cancelled", "task_id": taskID})
 }
 
@@ -322,24 +294,20 @@ func (h *TaskHandler) MarkBidCompleted(c *gin.Context) {
 		c.JSON(http.StatusForbidden, gin.H{"error": "only executor can mark as completed"})
 		return
 	}
-
 	userID, err := getUserIDFromContext(c)
 	if err != nil || userID <= 0 {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid user_id"})
 		return
 	}
-
 	bidID, err := strconv.Atoi(c.Param("id"))
 	if err != nil || bidID <= 0 {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid bid id"})
 		return
 	}
-
 	ctx := c.Request.Context()
 	if err := h.bidService.MarkBidCompleted(ctx, bidID, userID); err != nil {
 		c.JSON(http.StatusConflict, gin.H{"error": err.Error()})
 		return
 	}
-
 	c.JSON(http.StatusOK, gin.H{"message": "bid marked as completed", "bid_id": bidID})
 }

@@ -70,13 +70,10 @@ func main() {
 	// === 5. Настройка роутера ===
 	r := gin.New()
 
-	// ИСПРАВЛЕНО: Используем кастомный логгер с request_id
-	r.Use(middleware.LoggerWithWriter(os.Stdout))
-
-	// ИСПРАВЛЕНО: Подключаем кастомный RecoveryHandler вместо стандартного
-	r.Use(gin.CustomRecovery(middleware.PanicRecoveryHandler))
-
+	// Правильный порядок middleware
 	r.Use(middleware.RequestID())
+	r.Use(middleware.LoggerWithWriter(os.Stdout))
+	r.Use(gin.CustomRecovery(middleware.PanicRecoveryHandler))
 
 	r.GET("/health", func(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{
@@ -115,7 +112,6 @@ func main() {
 				executor.POST("/tasks/:id/bids", taskHandler.CreateBid)
 				executor.POST("/bids/:id/complete", taskHandler.MarkBidCompleted)
 			}
-			// === Admin routes (только для admin) ===
 			admin := protected.Group("/admin")
 			admin.Use(middleware.RequireRole(models.RoleAdmin))
 			{
