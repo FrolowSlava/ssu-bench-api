@@ -10,15 +10,15 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/gin-gonic/gin"
-	"github.com/joho/godotenv"
-
 	"ssu-bench-api/internal/database"
 	"ssu-bench-api/internal/handler"
 	"ssu-bench-api/internal/middleware"
 	"ssu-bench-api/internal/models"
 	"ssu-bench-api/internal/repository"
 	"ssu-bench-api/internal/service"
+
+	"github.com/gin-gonic/gin"
+	"github.com/joho/godotenv"
 )
 
 func main() {
@@ -26,7 +26,6 @@ func main() {
 	if err := godotenv.Load(); err != nil {
 		log.Println("[WARN] .env file not found, using environment variables")
 	}
-
 	mode := os.Getenv("GIN_MODE")
 	if mode == "" {
 		mode = gin.DebugMode
@@ -70,8 +69,13 @@ func main() {
 
 	// === 5. Настройка роутера ===
 	r := gin.New()
-	r.Use(gin.Logger())
-	r.Use(gin.Recovery())
+
+	// ИСПРАВЛЕНО: Используем кастомный логгер с request_id
+	r.Use(middleware.LoggerWithWriter(os.Stdout))
+
+	// ИСПРАВЛЕНО: Подключаем кастомный RecoveryHandler вместо стандартного
+	r.Use(gin.CustomRecovery(middleware.PanicRecoveryHandler))
+
 	r.Use(middleware.RequestID())
 
 	r.GET("/health", func(c *gin.Context) {
@@ -88,18 +92,15 @@ func main() {
 			auth.POST("/register", authHandler.Register)
 			auth.POST("/login", authHandler.Login)
 		}
-
 		protected := api.Group("/")
 		protected.Use(middleware.JWTAuth())
 		{
 			protected.GET("/me", authHandler.GetProfile)
-
 			tasks := protected.Group("/tasks")
 			{
 				tasks.GET("", taskHandler.GetTasks)
 				tasks.GET("/:id", taskHandler.GetTask)
 			}
-
 			customer := protected.Group("/")
 			customer.Use(middleware.RequireRole(models.RoleCustomer, models.RoleAdmin))
 			{
@@ -108,14 +109,12 @@ func main() {
 				customer.POST("/tasks/:id/confirm", taskHandler.ConfirmCompletion)
 				customer.POST("/tasks/:id/cancel", taskHandler.CancelTask)
 			}
-
 			executor := protected.Group("/")
 			executor.Use(middleware.RequireRole(models.RoleExecutor, models.RoleAdmin))
 			{
 				executor.POST("/tasks/:id/bids", taskHandler.CreateBid)
 				executor.POST("/bids/:id/complete", taskHandler.MarkBidCompleted)
 			}
-
 			// === Admin routes (только для admin) ===
 			admin := protected.Group("/admin")
 			admin.Use(middleware.RequireRole(models.RoleAdmin))
@@ -167,14 +166,11 @@ func main() {
 
 	<-quit
 	log.Println("[INFO] Shutdown signal received, starting graceful shutdown...")
-
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-
 	if err := server.Shutdown(ctx); err != nil {
 		log.Fatalf("[FATAL] Server forced to shutdown: %v", err)
 	}
-
 	log.Println("[INFO] Server exited gracefully")
 }
 

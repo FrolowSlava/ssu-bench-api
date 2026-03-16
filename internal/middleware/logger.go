@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"net/http"
+	"runtime/debug"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -15,15 +17,11 @@ func LoggerWithWriter(out io.Writer) gin.HandlerFunc {
 		start := time.Now()
 		path := c.Request.URL.Path
 		query := c.Request.URL.RawQuery
-
 		c.Next()
-
 		latency := time.Since(start)
 		status := c.Writer.Status()
 		method := c.Request.Method
-
 		requestID, _ := c.Get(RequestIDKey)
-
 		fmt.Fprintf(out, "[HTTP] %s | %3d | %12v | %15s | %7s | %s%s | req_id=%s\n",
 			time.Now().Format("2006-01-02 15:04:05"),
 			status,
@@ -42,15 +40,20 @@ func LoggerWithWriter(out io.Writer) gin.HandlerFunc {
 	}
 }
 
-// PanicRecoveryHandler обрабатывает паники с логированием
+// PanicRecoveryHandler обрабатывает паники с логированием и request_id
+// Соответствует требованию ТЗ: "Промежуточный слой: request_id, логгирование, recover"
 func PanicRecoveryHandler(c *gin.Context, err any) {
 	requestID, _ := c.Get(RequestIDKey)
 
-	// Логируем детали паники
-	log.Printf("[PANIC] req_id=%s | error=%+v", requestID, err)
+	// Логируем детали паники со стеком для отладки
+	log.Printf("[PANIC] req_id=%s | error=%+v\n", requestID, err)
+	log.Printf("[PANIC] Stack trace: %s\n", string(debug.Stack()))
 
-	// Возвращаем безопасный ответ
-	c.AbortWithStatusJSON(500, gin.H{
+	// Прерываем выполнение
+	c.Abort()
+
+	// Возвращаем безопасный ответ в едином формате ошибок
+	c.JSON(http.StatusInternalServerError, gin.H{
 		"error":      "internal_server_error",
 		"message":    "unexpected error occurred",
 		"request_id": requestID,
