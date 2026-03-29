@@ -1,0 +1,1286 @@
+openapi: 3.0.3
+info:
+  title: SsuBench API
+  description: REST API платформы SsuBench
+  version: 1.0.0
+servers:
+  - url: http://localhost:8080
+    description: Development server (root)
+  - url: http://localhost:8080/api/v1
+    description: Development server (API v1)
+paths:
+  /health:
+    get:
+      summary: Проверка состояния сервера
+      tags:
+        - Health
+      responses:
+        '200':
+          description: Сервер работает
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: "ok"
+                  timestamp:
+                    type: string
+                    format: date-time
+                    example: "2026-03-24T10:00:00Z"
+  /auth/register:
+    post:
+      summary: Регистрация нового пользователя
+      tags:
+        - Auth
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RegisterRequest'
+      responses:
+        '201':
+          description: Пользователь успешно зарегистрирован
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: "registration successful"
+        '400':
+          description: Неверный формат запроса
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                error: "invalid_request"
+                details: "Field 'email' is required"
+        '409':
+          description: Пользователь с таким email уже существует
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                error: "conflict"
+                details: "User with this email already exists"
+  /auth/login:
+    post:
+      summary: Аутентификация пользователя
+      tags:
+        - Auth
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+      responses:
+        '200':
+          description: Успешный вход
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LoginResponse'
+        '400':
+          description: Неверный формат запроса
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                error: "invalid_request"
+                details: "Field 'password' is required"
+        '401':
+          description: Неверные учетные данные
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                error: "unauthorized"
+                details: "Invalid email or password"
+  /me:
+    get:
+      summary: Получить профиль текущего пользователя
+      tags:
+        - Auth
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Профиль пользователя
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserProfile'
+        '401':
+          description: Пользователь не аутентифицирован
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                error: "unauthorized"
+                details: "Invalid or expired token"
+  /tasks:
+    get:
+      summary: Получить список задач с фильтрацией и пагинацией
+      tags:
+        - Tasks
+      parameters:
+        - name: page
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 1
+            minimum: 1
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 20
+            minimum: 1
+            maximum: 100
+        - name: status
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [open, in_progress, completed, cancelled]
+        - name: customer
+          in: query
+          required: false
+          schema:
+            type: integer
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Список задач
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  tasks:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Task'
+                  pagination:
+                    $ref: '#/components/schemas/Pagination'
+        '401':
+          description: Пользователь не аутентифицирован
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                error: "unauthorized"
+                details: "Authentication required"
+    post:
+      summary: Создать новую задачу (Customer/Admin)
+      tags:
+        - Tasks
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateTaskRequest'
+      responses:
+        '201':
+          description: Задача успешно создана
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Task'
+        '400':
+          description: Неверный формат запроса
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                error: "invalid_request"
+                details: "Field 'title' is required"
+        '401':
+          description: Пользователь не аутентифицирован
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                error: "unauthorized"
+                details: "Authentication required"
+        '403':
+          description: Только заказчики могут создавать задачи
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                error: "forbidden"
+                details: "Only customers can create tasks"
+  /tasks/{id}:
+    get:
+      summary: Получить задачу по ID
+      tags:
+        - Tasks
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+            minimum: 1
+      responses:
+        '200':
+          description: Информация о задаче
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Task'
+        '400':
+          description: Неверный ID задачи
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                error: "invalid_id"
+                details: "Task ID must be a positive integer"
+        '401':
+          description: Пользователь не аутентифицирован
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                error: "unauthorized"
+                details: "Authentication required"
+        '404':
+          description: Задача не найдена
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                error: "not_found"
+                details: "Task not found"
+  /tasks/{id}/select-bid:
+    post:
+      summary: Выбрать отклик для задачи (Customer/Admin)
+      tags:
+        - Tasks
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+            minimum: 1
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SelectBidRequest'
+      responses:
+        '200':
+          description: Отклик успешно выбран
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: "bid selected"
+                  bid_id:
+                    type: integer
+        '400':
+          description: Неверный формат запроса
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                error: "invalid_request"
+                details: "Field 'bid_id' is required"
+        '401':
+          description: Пользователь не аутентифицирован
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                error: "unauthorized"
+                details: "Authentication required"
+        '403':
+          description: Только владелец задачи может выбрать отклик
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                error: "forbidden"
+                details: "Only task owner can select a bid"
+        '404':
+          description: Задача или отклик не найдены
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                error: "not_found"
+                details: "Task or bid not found"
+        '409':
+          description: Ошибка при выборе отклика (например, задача не в статусе open)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                error: "conflict"
+                details: "Task is not in 'open' status"
+  /tasks/{id}/confirm:
+    post:
+      summary: Подтвердить выполнение задачи (Customer/Admin)
+      tags:
+        - Tasks
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+            minimum: 1
+      responses:
+        '200':
+          description: Выполнение подтверждено, оплата обработана
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: "completion confirmed, payment processed"
+        '400':
+          description: Неверный формат запроса
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                error: "invalid_request"
+                details: "Invalid task ID format"
+        '401':
+          description: Пользователь не аутентифицирован
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                error: "unauthorized"
+                details: "Authentication required"
+        '403':
+          description: Только владелец задачи может подтвердить выполнение
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                error: "forbidden"
+                details: "Only task owner can confirm completion"
+        '404':
+          description: Задача не найдена
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                error: "not_found"
+                details: "Task not found"
+        '409':
+          description: Ошибка подтверждения (например, недостаточно баллов, задача не в нужном статусе)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                error: "conflict"
+                details: "Insufficient balance to complete payment"
+  /tasks/{id}/cancel:
+    post:
+      summary: Отменить задачу (Customer/Admin)
+      tags:
+        - Tasks
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+            minimum: 1
+      responses:
+        '200':
+          description: Задача успешно отменена
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                  task_id:
+                    type: integer
+        '401':
+          description: Пользователь не аутентифицирован
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                error: "unauthorized"
+                details: "Authentication required"
+        '403':
+          description: Только владелец задачи может отменить задачу
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                error: "forbidden"
+                details: "Only task owner can cancel the task"
+        '404':
+          description: Задача не найдена
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                error: "not_found"
+                details: "Task not found"
+        '409':
+          description: Невозможно отменить задачу (например, она уже выполнена)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                error: "conflict"
+                details: "Cannot cancel a completed task"
+  /tasks/{id}/bids:
+    post:
+      summary: Создать отклик на задачу (Executor/Admin)
+      tags:
+        - Bids
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+            minimum: 1
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateBidRequest'
+      responses:
+        '201':
+          description: Отклик успешно создан
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Bid'
+        '400':
+          description: Неверный формат запроса
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                error: "invalid_request"
+                details: "Field 'amount' is required"
+        '401':
+          description: Пользователь не аутентифицирован
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                error: "unauthorized"
+                details: "Authentication required"
+        '403':
+          description: Только исполнители могут создавать отклики
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                error: "forbidden"
+                details: "Only executors can create bids"
+        '404':
+          description: Задача не найдена
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                error: "not_found"
+                details: "Task not found"
+        '409':
+          description: Ошибка при создании отклика (например, уже есть отклик от этого исполнителя)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                error: "conflict"
+                details: "You have already created a bid for this task"
+  /bids/{id}/complete:
+    post:
+      summary: Пометить отклик как выполненный (Executor/Admin)
+      tags:
+        - Bids
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+            minimum: 1
+      responses:
+        '200':
+          description: Отклик успешно помечен как выполненный
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                  bid_id:
+                    type: integer
+        '400':
+          description: Неверный формат запроса
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                error: "invalid_id"
+                details: "Bid ID must be a positive integer"
+        '401':
+          description: Пользователь не аутентифицирован
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                error: "unauthorized"
+                details: "Authentication required"
+        '403':
+          description: Только исполнитель может пометить отклик как выполненный
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                error: "forbidden"
+                details: "Only the executor can mark the bid as completed"
+        '404':
+          description: Отклик не найден
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                error: "not_found"
+                details: "Bid not found"
+        '409':
+          description: Ошибка при выполнении (например, отклик не в статусе selected)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                error: "conflict"
+                details: "Bid is not in 'selected' status"
+  /admin/users:
+    get:
+      summary: Получить список пользователей (Admin)
+      tags:
+        - Admin
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: page
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 1
+            minimum: 1
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 20
+            minimum: 1
+            maximum: 100
+      responses:
+        '200':
+          description: Список пользователей
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  users:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/User'
+                  pagination:
+                    $ref: '#/components/schemas/Pagination'
+        '401':
+          description: Пользователь не аутентифицирован
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                error: "unauthorized"
+                details: "Authentication required"
+        '403':
+          description: Доступ запрещен
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                error: "forbidden"
+                details: "Admin access required"
+  /admin/users/{id}:
+    get:
+      summary: Получить информацию о пользователе (Admin)
+      tags:
+        - Admin
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+            minimum: 1
+      responses:
+        '200':
+          description: Информация о пользователе
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserDetails'
+        '401':
+          description: Пользователь не аутентифицирован
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                error: "unauthorized"
+                details: "Authentication required"
+        '403':
+          description: Доступ запрещен
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                error: "forbidden"
+                details: "Admin access required"
+        '404':
+          description: Пользователь не найден
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                error: "not_found"
+                details: "User not found"
+  /admin/users/{id}/block:
+    post:
+      summary: Заблокировать пользователя (Admin)
+      tags:
+        - Admin
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+            minimum: 1
+      responses:
+        '200':
+          description: Пользователь заблокирован
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: "user blocked"
+                  user_id:
+                    type: integer
+                    example: 123
+        '401':
+          description: Пользователь не аутентифицирован
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                error: "unauthorized"
+                details: "Authentication required"
+        '403':
+          description: Доступ запрещен
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                error: "forbidden"
+                details: "Admin access required"
+        '404':
+          description: Пользователь не найден
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                error: "not_found"
+                details: "User not found"
+        '409':
+          description: Ошибка при блокировке (например, пытаемся заблокировать администратора)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                error: "conflict"
+                details: "Cannot block an admin user"
+  /admin/users/{id}/unblock:
+    post:
+      summary: Разблокировать пользователя (Admin)
+      tags:
+        - Admin
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+            minimum: 1
+      responses:
+        '200':
+          description: Пользователь разблокирован
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                  user_id:
+                    type: integer
+        '401':
+          description: Пользователь не аутентифицирован
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                error: "unauthorized"
+                details: "Authentication required"
+        '403':
+          description: Доступ запрещен
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                error: "forbidden"
+                details: "Admin access required"
+        '404':
+          description: Пользователь не найден
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                error: "not_found"
+                details: "User not found"
+  /admin/payments:
+    get:
+      summary: Получить список платежей (Admin)
+      tags:
+        - Admin
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: page
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 1
+            minimum: 1
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 20
+            minimum: 1
+            maximum: 100
+      responses:
+        '200':
+          description: Список платежей
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  payments:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Payment'
+                  pagination:
+                    $ref: '#/components/schemas/Pagination'
+        '401':
+          description: Пользователь не аутентифицирован
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                error: "unauthorized"
+                details: "Authentication required"
+        '403':
+          description: Доступ запрещен
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                error: "forbidden"
+                details: "Admin access required"
+  /admin/tasks:
+    get:
+      summary: Получить список задач (Admin)
+      tags:
+        - Admin
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: page
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 1
+            minimum: 1
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 20
+            minimum: 1
+            maximum: 100
+        - name: status
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [open, in_progress, completed, cancelled]
+      responses:
+        '200':
+          description: Список задач
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  tasks:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Task'
+                  pagination:
+                    $ref: '#/components/schemas/Pagination'
+        '401':
+          description: Пользователь не аутентифицирован
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                error: "unauthorized"
+                details: "Authentication required"
+        '403':
+          description: Доступ запрещен
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                error: "forbidden"
+                details: "Admin access required"
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  schemas:
+    RegisterRequest:
+      type: object
+      required:
+        - username
+        - email
+        - password
+        - role
+      properties:
+        username:
+          type: string
+          minLength: 3
+          maxLength: 32
+          example: "new_customer"
+        email:
+          type: string
+          format: email
+          example: "customer@example.com"
+        password:
+          type: string
+          minLength: 6
+          example: "securepassword123"
+        role:
+          type: string
+          enum: [customer, executor, admin]
+          example: "customer"
+        balance:
+          type: number
+          format: float
+          default: 0
+          description: Начальный баланс (по умолчанию 0)
+    LoginRequest:
+      type: object
+      required:
+        - email
+        - password
+      properties:
+        email:
+          type: string
+          format: email
+          example: "customer@example.com"
+        password:
+          type: string
+          minLength: 6
+          example: "securepassword123"
+    LoginResponse:
+      type: object
+      properties:
+        token:
+          type: string
+          description: JWT токен
+          example: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+        user_id:
+          type: integer
+          example: 1
+        role:
+          type: string
+          example: "customer"
+        message:
+          type: string
+          example: "login successful"
+    UserProfile:
+      type: object
+      properties:
+        user_id:
+          type: integer
+          example: 1
+        username:
+          type: string
+          example: "new_customer"
+        email:
+          type: string
+          example: "customer@example.com"
+        role:
+          type: string
+          enum: [customer, executor, admin]
+          example: "customer"
+        balance:
+          type: number
+          format: float
+          example: 100.0
+    Task:
+      type: object
+      properties:
+        id:
+          type: integer
+          example: 1
+        title:
+          type: string
+          example: "Новая задача"
+        description:
+          type: string
+          example: "Описание задачи"
+        customer_id:
+          type: integer
+          example: 1
+        budget:
+          type: number
+          format: float
+          example: 100.5
+        status:
+          type: string
+          enum: [open, in_progress, completed, cancelled]
+          example: "open"
+        created_at:
+          type: string
+          format: date-time
+          example: "2026-03-24T10:00:00Z"
+        customer_username:
+          type: string
+          example: "new_customer"
+          nullable: true
+        selected_bid_id:
+          type: integer
+          example: 1
+          nullable: true
+    CreateTaskRequest:
+      type: object
+      required:
+        - title
+        - budget
+      properties:
+        title:
+          type: string
+          minLength: 3
+          maxLength: 255
+          example: "Новая задача"
+        description:
+          type: string
+          maxLength: 1000
+          example: "Описание задачи"
+          nullable: true
+        budget:
+          type: number
+          format: float
+          minimum: 0.01
+          example: 100.5
+    SelectBidRequest:
+      type: object
+      required:
+        - bid_id
+      properties:
+        bid_id:
+          type: integer
+          minimum: 1
+          example: 1
+    CreateBidRequest:
+      type: object
+      required:
+        - amount
+      properties:
+        amount:
+          type: number
+          format: float
+          minimum: 0.01
+          example: 50.0
+    Bid:
+      type: object
+      properties:
+        id:
+          type: integer
+          example: 1
+        task_id:
+          type: integer
+          example: 1
+        executor_id:
+          type: integer
+          example: 2
+        amount:
+          type: number
+          format: float
+          example: 50.0
+        status:
+          type: string
+          enum: [pending, selected, rejected, completed]
+          example: "pending"
+        created_at:
+          type: string
+          format: date-time
+          example: "2026-03-24T10:00:00Z"
+        executor_username:
+          type: string
+          example: "new_executor"
+          nullable: true
+        task_title:
+          type: string
+          example: "Новая задача"
+          nullable: true
+    User:
+      type: object
+      properties:
+        id:
+          type: integer
+          example: 1
+        username:
+          type: string
+          example: "new_customer"
+        email:
+          type: string
+          example: "customer@example.com"
+        role:
+          type: string
+          enum: [customer, executor, admin]
+          example: "customer"
+        balance:
+          type: number
+          format: float
+          example: 100.0
+        created_at:
+          type: string
+          format: date-time
+          example: "2026-03-24T10:00:00Z"
+        updated_at:
+          type: string
+          format: date-time
+          example: "2026-03-24T10:00:00Z"
+        blocked:
+          type: boolean
+          example: false
+    UserDetails:
+      type: object
+      properties:
+        user_id:
+          type: integer
+          example: 1
+        username:
+          type: string
+          example: "new_customer"
+        email:
+          type: string
+          example: "customer@example.com"
+        role:
+          type: string
+          enum: [customer, executor, admin]
+          example: "customer"
+        balance:
+          type: number
+          format: float
+          example: 100.0
+        created_at:
+          type: string
+          format: date-time
+          example: "2026-03-24T10:00:00Z"
+        updated_at:
+          type: string
+          format: date-time
+          example: "2026-03-24T10:00:00Z"
+        blocked:
+          type: boolean
+          example: false
+    Payment:
+      type: object
+      properties:
+        id:
+          type: integer
+          example: 1
+        task_id:
+          type: integer
+          example: 1
+        from_user_id:
+          type: integer
+          example: 1
+        to_user_id:
+          type: integer
+          example: 2
+        amount:
+          type: number
+          format: float
+          example: 50.0
+        type:
+          type: string
+          enum: [reward, refund]
+          example: "reward"
+        status:
+          type: string
+          example: "completed"
+        description:
+          type: string
+          example: "Reward for task #1: Новая задача"
+        created_at:
+          type: string
+          format: date-time
+          example: "2026-03-24T10:00:00Z"
+        completed_at:
+          type: string
+          format: date-time
+          example: "2026-03-24T10:00:00Z"
+          nullable: true
+    Pagination:
+      type: object
+      properties:
+        page:
+          type: integer
+          example: 1
+        limit:
+          type: integer
+          example: 20
+        total:
+          type: integer
+          example: 100
+    ErrorResponse:
+      type: object
+      properties:
+        error:
+          type: string
+          example: "user not found"
+        details:
+          type: string
+          example: "The requested user does not exist."
+          nullable: true

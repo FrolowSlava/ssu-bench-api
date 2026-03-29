@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"errors"
 	"net/http"
 	"ssu-bench-api/internal/models"
 	"ssu-bench-api/internal/service"
@@ -23,8 +24,6 @@ func NewTaskHandler(taskService *service.TaskService, bidService *service.BidSer
 	}
 }
 
-// getRoleFromContext извлекает роль из контекста с правильной типизацией
-// Поддерживает как string, так и models.Role
 func getRoleFromContext(c *gin.Context) (string, error) {
 	roleRaw, exists := c.Get("role")
 	if !exists {
@@ -40,15 +39,13 @@ func getRoleFromContext(c *gin.Context) (string, error) {
 	}
 }
 
-// getUserIDFromContext извлекает user_id из контекста
-// Поддерживает float64 (из JWT claims), int, int64
 func getUserIDFromContext(c *gin.Context) (int, error) {
 	userIDRaw, exists := c.Get("user_id")
 	if !exists {
 		return 0, nil
 	}
 	switch v := userIDRaw.(type) {
-	case float64: // JWT claims используют float64 для чисел
+	case float64:
 		return int(v), nil
 	case int:
 		return v, nil
@@ -64,23 +61,49 @@ func getUserIDFromContext(c *gin.Context) (int, error) {
 func (h *TaskHandler) CreateTask(c *gin.Context) {
 	userRole, err := getRoleFromContext(c)
 	if err != nil || (userRole != "customer" && userRole != "admin") {
-		c.JSON(http.StatusForbidden, gin.H{"error": "only customers can create tasks"})
+		c.JSON(http.StatusForbidden, models.ErrorResponse{
+			Error:   "forbidden",
+			Details: "only customers can create tasks",
+		})
 		return
 	}
 	userID, err := getUserIDFromContext(c)
 	if err != nil || userID <= 0 {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid user_id"})
+		c.JSON(http.StatusUnauthorized, models.ErrorResponse{
+			Error:   "unauthorized",
+			Details: "invalid user_id",
+		})
 		return
 	}
 	var req models.CreateTaskRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		c.JSON(http.StatusBadRequest, models.ErrorResponse{
+			Error:   "invalid_request",
+			Details: err.Error(),
+		})
 		return
 	}
 	ctx := c.Request.Context()
 	task, err := h.taskService.CreateTask(ctx, userID, &req)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		if errors.Is(err, models.ErrUserNotFound) {
+			c.JSON(http.StatusNotFound, models.ErrorResponse{
+				Error:   "not_found",
+				Details: "customer not found",
+			})
+			return
+		}
+		if errors.Is(err, models.ErrOnlyCustomer) {
+			c.JSON(http.StatusForbidden, models.ErrorResponse{
+				Error:   "forbidden",
+				Details: "only customers can create tasks",
+			})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, models.ErrorResponse{
+			Error:   "internal_error",
+			Details: err.Error(),
+		})
 		return
 	}
 	c.JSON(http.StatusCreated, task)
@@ -89,10 +112,12 @@ func (h *TaskHandler) CreateTask(c *gin.Context) {
 // GetTasks возвращает список задач с пагинацией и фильтрами
 // GET /api/v1/tasks?page=1&limit=20&status=open&customer=123
 func (h *TaskHandler) GetTasks(c *gin.Context) {
-
 	var query models.ListTasksQuery
 	if err := c.ShouldBindQuery(&query); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		c.JSON(http.StatusBadRequest, models.ErrorResponse{
+			Error:   "invalid_request",
+			Details: err.Error(),
+		})
 		return
 	}
 	// Устанавливаем значения по умолчанию (Gin не делает это автоматически для form-тегов)
@@ -105,7 +130,10 @@ func (h *TaskHandler) GetTasks(c *gin.Context) {
 	ctx := c.Request.Context()
 	tasks, total, err := h.taskService.ListTasks(ctx, query)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		c.JSON(http.StatusInternalServerError, models.ErrorResponse{
+			Error:   "internal_error",
+			Details: err.Error(),
+		})
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{
@@ -123,17 +151,26 @@ func (h *TaskHandler) GetTasks(c *gin.Context) {
 func (h *TaskHandler) GetTask(c *gin.Context) {
 	id, err := strconv.Atoi(c.Param("id"))
 	if err != nil || id <= 0 {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid task id"})
+		c.JSON(http.StatusBadRequest, models.ErrorResponse{
+			Error:   "invalid_request",
+			Details: "invalid task id",
+		})
 		return
 	}
 	ctx := c.Request.Context()
 	task, err := h.taskService.GetTask(ctx, id)
 	if err != nil {
-		if err.Error() == "task not found" {
-			c.JSON(http.StatusNotFound, gin.H{"error": "task not found"})
+		if errors.Is(err, models.ErrTaskNotFound) {
+			c.JSON(http.StatusNotFound, models.ErrorResponse{
+				Error:   "not_found",
+				Details: "task not found",
+			})
 			return
 		}
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		c.JSON(http.StatusInternalServerError, models.ErrorResponse{
+			Error:   "internal_error",
+			Details: err.Error(),
+		})
 		return
 	}
 	c.JSON(http.StatusOK, task)
@@ -144,28 +181,64 @@ func (h *TaskHandler) GetTask(c *gin.Context) {
 func (h *TaskHandler) CreateBid(c *gin.Context) {
 	userRole, err := getRoleFromContext(c)
 	if err != nil || (userRole != "executor" && userRole != "admin") {
-		c.JSON(http.StatusForbidden, gin.H{"error": "only executors can create bids"})
+		c.JSON(http.StatusForbidden, models.ErrorResponse{
+			Error:   "forbidden",
+			Details: "only executors can create bids",
+		})
 		return
 	}
 	userID, err := getUserIDFromContext(c)
 	if err != nil || userID <= 0 {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid user_id"})
+		c.JSON(http.StatusUnauthorized, models.ErrorResponse{
+			Error:   "unauthorized",
+			Details: "invalid user_id",
+		})
 		return
 	}
 	taskID, err := strconv.Atoi(c.Param("id"))
 	if err != nil || taskID <= 0 {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid task id"})
+		c.JSON(http.StatusBadRequest, models.ErrorResponse{
+			Error:   "invalid_request",
+			Details: "invalid task id",
+		})
 		return
 	}
 	var req models.CreateBidRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		c.JSON(http.StatusBadRequest, models.ErrorResponse{
+			Error:   "invalid_request",
+			Details: err.Error(),
+		})
 		return
 	}
 	ctx := c.Request.Context()
 	bid, err := h.bidService.CreateBid(ctx, userID, taskID, &req)
 	if err != nil {
-		c.JSON(http.StatusConflict, gin.H{"error": err.Error()})
+		if errors.Is(err, models.ErrUserNotFound) || errors.Is(err, models.ErrTaskNotFound) {
+			c.JSON(http.StatusNotFound, models.ErrorResponse{
+				Error:   "not_found",
+				Details: err.Error(),
+			})
+			return
+		}
+		if errors.Is(err, models.ErrOnlyExecutor) {
+			c.JSON(http.StatusForbidden, models.ErrorResponse{
+				Error:   "forbidden",
+				Details: "only executors can create bids",
+			})
+			return
+		}
+		if errors.Is(err, models.ErrAlreadyExists) {
+			c.JSON(http.StatusConflict, models.ErrorResponse{
+				Error:   "conflict",
+				Details: "you have already bid on this task",
+			})
+			return
+		}
+		c.JSON(http.StatusConflict, models.ErrorResponse{
+			Error:   "conflict",
+			Details: err.Error(),
+		})
 		return
 	}
 	c.JSON(http.StatusCreated, bid)
@@ -180,27 +253,56 @@ func (h *TaskHandler) CreateBid(c *gin.Context) {
 func (h *TaskHandler) SelectBid(c *gin.Context) {
 	userRole, err := getRoleFromContext(c)
 	if err != nil || (userRole != "customer" && userRole != "admin") {
-		c.JSON(http.StatusForbidden, gin.H{"error": "only task owner can select bid"})
+		c.JSON(http.StatusForbidden, models.ErrorResponse{
+			Error:   "forbidden",
+			Details: "only task owner can select bid",
+		})
 		return
 	}
 	userID, err := getUserIDFromContext(c)
 	if err != nil || userID <= 0 {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid user_id"})
+		c.JSON(http.StatusUnauthorized, models.ErrorResponse{
+			Error:   "unauthorized",
+			Details: "invalid user_id",
+		})
 		return
 	}
 	taskID, err := strconv.Atoi(c.Param("id"))
 	if err != nil || taskID <= 0 {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid task id"})
+		c.JSON(http.StatusBadRequest, models.ErrorResponse{
+			Error:   "invalid_request",
+			Details: "invalid task id",
+		})
 		return
 	}
 	var req models.SelectBidRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		c.JSON(http.StatusBadRequest, models.ErrorResponse{
+			Error:   "invalid_request",
+			Details: err.Error(),
+		})
 		return
 	}
 	ctx := c.Request.Context()
 	if err := h.taskService.SelectBid(ctx, taskID, userID, req.BidID); err != nil {
-		c.JSON(http.StatusConflict, gin.H{"error": err.Error()})
+		if errors.Is(err, models.ErrTaskNotFound) || errors.Is(err, models.ErrBidNotFound) {
+			c.JSON(http.StatusNotFound, models.ErrorResponse{
+				Error:   "not_found",
+				Details: err.Error(),
+			})
+			return
+		}
+		if errors.Is(err, models.ErrOnlyTaskOwner) {
+			c.JSON(http.StatusForbidden, models.ErrorResponse{
+				Error:   "forbidden",
+				Details: "only task owner can select bid",
+			})
+			return
+		}
+		c.JSON(http.StatusConflict, models.ErrorResponse{
+			Error:   "conflict",
+			Details: err.Error(),
+		})
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"message": "bid selected", "bid_id": req.BidID})
@@ -219,38 +321,55 @@ func (h *TaskHandler) SelectBid(c *gin.Context) {
 func (h *TaskHandler) ConfirmCompletion(c *gin.Context) {
 	userRole, err := getRoleFromContext(c)
 	if err != nil || (userRole != "customer" && userRole != "admin") {
-		c.JSON(http.StatusForbidden, gin.H{"error": "only task owner can confirm completion"})
+		c.JSON(http.StatusForbidden, models.ErrorResponse{
+			Error:   "forbidden",
+			Details: "only task owner can confirm completion",
+		})
 		return
 	}
 	userID, err := getUserIDFromContext(c)
 	if err != nil || userID <= 0 {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid user_id"})
+		c.JSON(http.StatusUnauthorized, models.ErrorResponse{
+			Error:   "unauthorized",
+			Details: "invalid user_id",
+		})
 		return
 	}
 	taskID, err := strconv.Atoi(c.Param("id"))
 	if err != nil || taskID <= 0 {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid task id"})
+		c.JSON(http.StatusBadRequest, models.ErrorResponse{
+			Error:   "invalid_request",
+			Details: "invalid task id",
+		})
 		return
 	}
 	ctx := c.Request.Context()
-	result, err := h.paymentService.ProcessReward(ctx, taskID, userID)
-	if err != nil {
-		if err.Error() == "insufficient balance" {
-			c.JSON(http.StatusPaymentRequired, gin.H{"error": "insufficient balance"})
-			return
+	if err := h.taskService.ConfirmTaskCompletion(ctx, taskID, userID); err != nil {
+		switch {
+		case errors.Is(err, models.ErrInsufficientBalance):
+			c.JSON(http.StatusPaymentRequired, models.ErrorResponse{
+				Error:   "insufficient_balance",
+				Details: "insufficient balance to complete payment",
+			})
+		case errors.Is(err, models.ErrTaskNotFound):
+			c.JSON(http.StatusNotFound, models.ErrorResponse{
+				Error:   "not_found",
+				Details: "task not found",
+			})
+		case errors.Is(err, models.ErrOnlyTaskOwner):
+			c.JSON(http.StatusForbidden, models.ErrorResponse{
+				Error:   "forbidden",
+				Details: "only task owner can confirm completion",
+			})
+		default:
+			c.JSON(http.StatusConflict, models.ErrorResponse{
+				Error:   "conflict",
+				Details: err.Error(),
+			})
 		}
-		c.JSON(http.StatusConflict, gin.H{"error": err.Error()})
 		return
 	}
-	if !result.Success {
-		c.JSON(http.StatusPaymentRequired, gin.H{"error": "insufficient balance"})
-		return
-	}
-	c.JSON(http.StatusOK, gin.H{
-		"message":      "completion confirmed, payment processed",
-		"from_balance": result.FromBalance,
-		"to_balance":   result.ToBalance,
-	})
+	c.JSON(http.StatusOK, gin.H{"message": "completion confirmed, payment processed"})
 }
 
 // CancelTask отменяет задачу (только владелец, если не выполнена)
@@ -261,22 +380,48 @@ func (h *TaskHandler) ConfirmCompletion(c *gin.Context) {
 func (h *TaskHandler) CancelTask(c *gin.Context) {
 	userRole, err := getRoleFromContext(c)
 	if err != nil || (userRole != "customer" && userRole != "admin") {
-		c.JSON(http.StatusForbidden, gin.H{"error": "only task owner can cancel"})
+		c.JSON(http.StatusForbidden, models.ErrorResponse{
+			Error:   "forbidden",
+			Details: "only task owner can cancel",
+		})
 		return
 	}
 	userID, err := getUserIDFromContext(c)
 	if err != nil || userID <= 0 {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid user_id"})
+		c.JSON(http.StatusUnauthorized, models.ErrorResponse{
+			Error:   "unauthorized",
+			Details: "invalid user_id",
+		})
 		return
 	}
 	taskID, err := strconv.Atoi(c.Param("id"))
 	if err != nil || taskID <= 0 {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid task id"})
+		c.JSON(http.StatusBadRequest, models.ErrorResponse{
+			Error:   "invalid_request",
+			Details: "invalid task id",
+		})
 		return
 	}
 	ctx := c.Request.Context()
-	if err := h.taskService.UpdateTaskStatus(ctx, taskID, userID, models.TaskStatusCancelled); err != nil {
-		c.JSON(http.StatusConflict, gin.H{"error": err.Error()})
+	if err := h.taskService.CancelTask(ctx, taskID, userID); err != nil {
+		if errors.Is(err, models.ErrTaskNotFound) {
+			c.JSON(http.StatusNotFound, models.ErrorResponse{
+				Error:   "not_found",
+				Details: "task not found",
+			})
+			return
+		}
+		if errors.Is(err, models.ErrOnlyTaskOwner) {
+			c.JSON(http.StatusForbidden, models.ErrorResponse{
+				Error:   "forbidden",
+				Details: "only task owner can cancel",
+			})
+			return
+		}
+		c.JSON(http.StatusConflict, models.ErrorResponse{
+			Error:   "conflict",
+			Details: err.Error(),
+		})
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"message": "task cancelled", "task_id": taskID})
@@ -291,22 +436,48 @@ func (h *TaskHandler) CancelTask(c *gin.Context) {
 func (h *TaskHandler) MarkBidCompleted(c *gin.Context) {
 	userRole, err := getRoleFromContext(c)
 	if err != nil || (userRole != "executor" && userRole != "admin") {
-		c.JSON(http.StatusForbidden, gin.H{"error": "only executor can mark as completed"})
+		c.JSON(http.StatusForbidden, models.ErrorResponse{
+			Error:   "forbidden",
+			Details: "only executor can mark as completed",
+		})
 		return
 	}
 	userID, err := getUserIDFromContext(c)
 	if err != nil || userID <= 0 {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid user_id"})
+		c.JSON(http.StatusUnauthorized, models.ErrorResponse{
+			Error:   "unauthorized",
+			Details: "invalid user_id",
+		})
 		return
 	}
 	bidID, err := strconv.Atoi(c.Param("id"))
 	if err != nil || bidID <= 0 {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid bid id"})
+		c.JSON(http.StatusBadRequest, models.ErrorResponse{
+			Error:   "invalid_request",
+			Details: "invalid bid id",
+		})
 		return
 	}
 	ctx := c.Request.Context()
 	if err := h.bidService.MarkBidCompleted(ctx, bidID, userID); err != nil {
-		c.JSON(http.StatusConflict, gin.H{"error": err.Error()})
+		if errors.Is(err, models.ErrBidNotFound) {
+			c.JSON(http.StatusNotFound, models.ErrorResponse{
+				Error:   "not_found",
+				Details: "bid not found",
+			})
+			return
+		}
+		if errors.Is(err, models.ErrOnlyExecutor) {
+			c.JSON(http.StatusForbidden, models.ErrorResponse{
+				Error:   "forbidden",
+				Details: "only executor can mark as completed",
+			})
+			return
+		}
+		c.JSON(http.StatusConflict, models.ErrorResponse{
+			Error:   "conflict",
+			Details: err.Error(),
+		})
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"message": "bid marked as completed", "bid_id": bidID})

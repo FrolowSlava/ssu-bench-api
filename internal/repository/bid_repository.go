@@ -35,7 +35,7 @@ func (r *BidRepository) GetBidByID(ctx context.Context, id int) (*models.Bid, er
 	)
 	if err != nil {
 		if err == sql.ErrNoRows {
-			return nil, fmt.Errorf("bid not found")
+			return nil, models.ErrBidNotFound
 		}
 		return nil, fmt.Errorf("failed to get bid: %w", err)
 	}
@@ -62,7 +62,7 @@ func (r *BidRepository) GetBidsByTaskID(ctx context.Context, taskID int) ([]mode
 	return bids, nil
 }
 
-// ✅ ИСПРАВЛЕНО: ищем отклики со статусом 'selected' ИЛИ 'completed'
+// ищем отклики со статусом 'selected' ИЛИ 'completed'
 func (r *BidRepository) GetSelectedBidForTask(ctx context.Context, taskID int) (*models.Bid, error) {
 	query := `SELECT id, task_id, executor_id, amount, status, created_at, updated_at
 	FROM bids WHERE task_id = $1 AND status IN ('selected', 'completed') LIMIT 1`
@@ -101,7 +101,7 @@ func (r *BidRepository) UpdateBidStatus(ctx context.Context, id int, status mode
 		return fmt.Errorf("failed to check rows affected: %w", err)
 	}
 	if rowsAffected == 0 {
-		return fmt.Errorf("bid not found")
+		return models.ErrBidNotFound
 	}
 	return nil
 }

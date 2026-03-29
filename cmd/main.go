@@ -21,11 +21,16 @@ import (
 	"github.com/joho/godotenv"
 )
 
-func main() {
-	// === 1. Инициализация ===
+// init() выполняется ПЕРЕД main() и перед init() других пакетов
+// Это гарантирует, что .env загружен до использования переменных
+func init() {
 	if err := godotenv.Load(); err != nil {
 		log.Println("[WARN] .env file not found, using environment variables")
 	}
+}
+
+func main() {
+	// === 1. Инициализация ===
 	mode := os.Getenv("GIN_MODE")
 	if mode == "" {
 		mode = gin.DebugMode
@@ -59,7 +64,7 @@ func main() {
 	paymentRepo := repository.NewPaymentRepository(db)
 
 	userService := service.NewUserService(userRepo)
-	taskService := service.NewTaskService(taskRepo, bidRepo, userRepo, db)
+	taskService := service.NewTaskService(taskRepo, bidRepo, userRepo, paymentRepo, db)
 	bidService := service.NewBidService(bidRepo, taskRepo, userRepo, db)
 	paymentService := service.NewPaymentService(paymentRepo, taskRepo, bidRepo, userRepo, db)
 
@@ -69,6 +74,21 @@ func main() {
 
 	// === 5. Настройка роутера ===
 	r := gin.New()
+
+	// === CORS Middleware (для Swagger UI) ===
+	r.Use(func(c *gin.Context) {
+		c.Header("Access-Control-Allow-Origin", "*")
+		c.Header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
+		c.Header("Access-Control-Allow-Headers", "Origin, Content-Type, Authorization, X-Request-ID")
+
+		if c.Request.Method == "OPTIONS" {
+			c.AbortWithStatus(http.StatusNoContent)
+			return
+		}
+
+		c.Next()
+	})
+	// ===========================================
 
 	// Правильный порядок middleware
 	r.Use(middleware.RequestID())

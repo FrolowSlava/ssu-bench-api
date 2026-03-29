@@ -28,14 +28,20 @@ func NewBidService(bidRepo *repository.BidRepository, taskRepo *repository.TaskR
 func (s *BidService) CreateBid(ctx context.Context, executorID, taskID int, req *models.CreateBidRequest) (*models.Bid, error) {
 	executor, err := s.userRepo.GetUserByID(ctx, executorID)
 	if err != nil {
-		return nil, fmt.Errorf("executor not found: %w", err)
+		if errors.Is(err, models.ErrUserNotFound) {
+			return nil, models.ErrUserNotFound
+		}
+		return nil, fmt.Errorf("failed to get executor: %w", err)
 	}
 	if executor.Role != models.RoleExecutor && executor.Role != models.RoleAdmin {
-		return nil, errors.New("only executors can create bids")
+		return nil, models.ErrOnlyExecutor
 	}
 	task, err := s.taskRepo.GetTaskByID(ctx, taskID)
 	if err != nil {
-		return nil, fmt.Errorf("task not found: %w", err)
+		if errors.Is(err, models.ErrTaskNotFound) {
+			return nil, models.ErrTaskNotFound
+		}
+		return nil, fmt.Errorf("failed to get task: %w", err)
 	}
 	if task.Status != models.TaskStatusOpen {
 		return nil, fmt.Errorf("can only bid on open tasks, current status: %s", task.Status)
@@ -45,7 +51,7 @@ func (s *BidService) CreateBid(ctx context.Context, executorID, taskID int, req 
 		return nil, fmt.Errorf("failed to check existing bid: %w", err)
 	}
 	if alreadyBid {
-		return nil, errors.New("you have already bid on this task")
+		return nil, models.ErrAlreadyExists
 	}
 	bid := &models.Bid{
 		TaskID:     taskID,
@@ -114,21 +120,18 @@ func (s *BidService) enrichBid(ctx context.Context, bid models.Bid) (models.Bid,
 func (s *BidService) MarkBidCompleted(ctx context.Context, bidID, executorID int) error {
 	bid, err := s.bidRepo.GetBidByID(ctx, bidID)
 	if err != nil {
-		return fmt.Errorf("bid not found: %w", err)
+		if errors.Is(err, models.ErrBidNotFound) {
+			return models.ErrBidNotFound
+		}
+		return fmt.Errorf("failed to get bid: %w", err)
 	}
 	if bid.ExecutorID != executorID {
-		return errors.New("only selected executor can mark task as completed")
+		return models.ErrOnlyExecutor
 	}
 	if bid.Status != models.BidStatusSelected {
 		return fmt.Errorf("can only complete selected bids, current status: %s", bid.Status)
 	}
-	task, err := s.taskRepo.GetTaskByID(ctx, bid.TaskID)
-	if err != nil {
-		return err
-	}
-	if task.Status == models.TaskStatusCompleted {
-		return errors.New("task already completed")
-	}
+	// Ключевое изменение: НЕ обновляем статус задачи!
 	if err := s.bidRepo.UpdateBidStatus(ctx, bidID, models.BidStatusCompleted); err != nil {
 		return fmt.Errorf("failed to update bid status: %w", err)
 	}

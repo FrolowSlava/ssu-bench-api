@@ -4,7 +4,6 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
-
 	"ssu-bench-api/internal/models"
 )
 
@@ -40,7 +39,7 @@ func (r *TaskRepository) GetTaskByID(ctx context.Context, id int) (*models.Task,
 	)
 	if err != nil {
 		if err == sql.ErrNoRows {
-			return nil, fmt.Errorf("task not found")
+			return nil, models.ErrTaskNotFound
 		}
 		return nil, fmt.Errorf("failed to get task: %w", err)
 	}
@@ -127,7 +126,7 @@ func (r *TaskRepository) UpdateTaskStatus(ctx context.Context, id int, status mo
 		return fmt.Errorf("failed to check rows affected: %w", err)
 	}
 	if rowsAffected == 0 {
-		return fmt.Errorf("task not found")
+		return models.ErrTaskNotFound
 	}
 	return nil
 }
@@ -139,7 +138,7 @@ func (r *TaskRepository) CanCancelTask(ctx context.Context, id int) (bool, error
 	err := r.db.QueryRowContext(ctx, query, id).Scan(&status)
 	if err != nil {
 		if err == sql.ErrNoRows {
-			return false, fmt.Errorf("task not found")
+			return false, models.ErrTaskNotFound
 		}
 		return false, err
 	}
@@ -151,16 +150,19 @@ func (r *TaskRepository) CanCancelTask(ctx context.Context, id int) (bool, error
 // SetSelectedBid атомарно выбирает одну заявку и отклоняет остальные
 // Возвращает ошибку, если не удалось обновить
 func (r *TaskRepository) SetSelectedBid(ctx context.Context, taskID, bidID int) error {
-	// Атомарно: снимаем selection с других, ставим на выбранную
-	// Используем CASE для обновления всех pending bids одной командой
-	query := `
+	// Используем константы из models для безопасности типов
+	selectedStatus := string(models.BidStatusSelected)
+	rejectedStatus := string(models.BidStatusRejected)
+	pendingStatus := string(models.BidStatusPending)
+
+	query := fmt.Sprintf(`
 		UPDATE bids 
 		SET status = CASE 
-			WHEN id = $1 THEN 'selected' 
-			ELSE 'rejected' 
+			WHEN id = $1 THEN '%s' 
+			ELSE '%s' 
 		END,
 		updated_at = NOW()
-		WHERE task_id = $2 AND status = 'pending'`
+		WHERE task_id = $2 AND status = '%s'`, selectedStatus, rejectedStatus, pendingStatus)
 
 	_, err := r.db.ExecContext(ctx, query, bidID, taskID)
 	if err != nil {

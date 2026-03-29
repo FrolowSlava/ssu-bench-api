@@ -1,9 +1,11 @@
 package handler
 
 import (
+	"errors"
 	"net/http"
 	"strconv"
 
+	"ssu-bench-api/internal/models"
 	"ssu-bench-api/internal/service"
 
 	"github.com/gin-gonic/gin"
@@ -44,7 +46,10 @@ func (h *AdminHandler) ListUsers(c *gin.Context) {
 	ctx := c.Request.Context()
 	users, total, err := h.userService.ListUsers(ctx, page, limit)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		c.JSON(http.StatusInternalServerError, models.ErrorResponse{
+			Error:   "internal_error",
+			Details: err.Error(),
+		})
 		return
 	}
 
@@ -62,18 +67,27 @@ func (h *AdminHandler) ListUsers(c *gin.Context) {
 func (h *AdminHandler) GetUserDetails(c *gin.Context) {
 	id, err := strconv.Atoi(c.Param("id"))
 	if err != nil || id <= 0 {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid user id"})
+		c.JSON(http.StatusBadRequest, models.ErrorResponse{
+			Error:   "invalid_request",
+			Details: "invalid user id",
+		})
 		return
 	}
 
 	ctx := c.Request.Context()
 	user, err := h.userService.GetUserWithBalance(ctx, id)
 	if err != nil {
-		if err.Error() == "user not found" {
-			c.JSON(http.StatusNotFound, gin.H{"error": "user not found"})
+		if errors.Is(err, models.ErrUserNotFound) {
+			c.JSON(http.StatusNotFound, models.ErrorResponse{
+				Error:   "not_found",
+				Details: "user not found",
+			})
 			return
 		}
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		c.JSON(http.StatusInternalServerError, models.ErrorResponse{
+			Error:   "internal_error",
+			Details: err.Error(),
+		})
 		return
 	}
 
@@ -92,17 +106,26 @@ func (h *AdminHandler) GetUserDetails(c *gin.Context) {
 func (h *AdminHandler) BlockUser(c *gin.Context) {
 	id, err := strconv.Atoi(c.Param("id"))
 	if err != nil || id <= 0 {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid user id"})
+		c.JSON(http.StatusBadRequest, models.ErrorResponse{
+			Error:   "invalid_request",
+			Details: "invalid user id",
+		})
 		return
 	}
 
 	ctx := c.Request.Context()
 	if err := h.userService.BlockUser(ctx, id); err != nil {
-		if err.Error() == "user not found" {
-			c.JSON(http.StatusNotFound, gin.H{"error": "user not found"})
+		if errors.Is(err, models.ErrUserNotFound) {
+			c.JSON(http.StatusNotFound, models.ErrorResponse{
+				Error:   "not_found",
+				Details: "user not found",
+			})
 			return
 		}
-		c.JSON(http.StatusConflict, gin.H{"error": err.Error()})
+		c.JSON(http.StatusConflict, models.ErrorResponse{
+			Error:   "conflict",
+			Details: err.Error(),
+		})
 		return
 	}
 
@@ -116,17 +139,26 @@ func (h *AdminHandler) BlockUser(c *gin.Context) {
 func (h *AdminHandler) UnblockUser(c *gin.Context) {
 	id, err := strconv.Atoi(c.Param("id"))
 	if err != nil || id <= 0 {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid user id"})
+		c.JSON(http.StatusBadRequest, models.ErrorResponse{
+			Error:   "invalid_request",
+			Details: "invalid user id",
+		})
 		return
 	}
 
 	ctx := c.Request.Context()
 	if err := h.userService.UnblockUser(ctx, id); err != nil {
-		if err.Error() == "user not found" {
-			c.JSON(http.StatusNotFound, gin.H{"error": "user not found"})
+		if errors.Is(err, models.ErrUserNotFound) {
+			c.JSON(http.StatusNotFound, models.ErrorResponse{
+				Error:   "not_found",
+				Details: "user not found",
+			})
 			return
 		}
-		c.JSON(http.StatusConflict, gin.H{"error": err.Error()})
+		c.JSON(http.StatusConflict, models.ErrorResponse{
+			Error:   "conflict",
+			Details: err.Error(),
+		})
 		return
 	}
 
@@ -153,7 +185,10 @@ func (h *AdminHandler) ListPayments(c *gin.Context) {
 	ctx := c.Request.Context()
 	payments, total, err := h.paymentService.GetAllPayments(ctx, page, limit)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		c.JSON(http.StatusInternalServerError, models.ErrorResponse{
+			Error:   "internal_error",
+			Details: err.Error(),
+		})
 		return
 	}
 
@@ -185,7 +220,10 @@ func (h *AdminHandler) ListAllTasks(c *gin.Context) {
 	ctx := c.Request.Context()
 	tasks, total, err := h.taskService.GetAllTasks(ctx, page, limit, statusFilter)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		c.JSON(http.StatusInternalServerError, models.ErrorResponse{
+			Error:   "internal_error",
+			Details: err.Error(),
+		})
 		return
 	}
 

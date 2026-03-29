@@ -37,7 +37,7 @@ func (r *PaymentRepository) GetPaymentByID(ctx context.Context, id int) (*models
 	)
 	if err != nil {
 		if err == sql.ErrNoRows {
-			return nil, fmt.Errorf("payment not found")
+			return nil, models.ErrPaymentNotFound
 		}
 		return nil, fmt.Errorf("failed to get payment: %w", err)
 	}
@@ -56,7 +56,7 @@ func (r *PaymentRepository) TransferPoints(ctx context.Context, fromID, toID int
 	err = tx.QueryRowContext(ctx, query, fromID).Scan(&fromBalance)
 	if err != nil {
 		if err == sql.ErrNoRows {
-			return nil, fmt.Errorf("sender user not found")
+			return nil, models.ErrUserNotFound
 		}
 		return nil, fmt.Errorf("failed to get sender balance: %w", err)
 	}

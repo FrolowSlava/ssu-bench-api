@@ -17,9 +17,15 @@ func NewUserRepository(db *sql.DB) *UserRepository {
 
 func (r *UserRepository) CreateUser(ctx context.Context, user *models.User) error {
 	query := `
-	INSERT INTO users (username, email, password_hash, role, created_at)
-	VALUES ($1, $2, $3, $4, NOW())`
-	_, err := r.db.ExecContext(ctx, query, user.Username, user.Email, user.PasswordHash, user.Role)
+	INSERT INTO users (username, email, password_hash, role, balance, created_at)
+	VALUES ($1, $2, $3, $4, $5, NOW())`
+	_, err := r.db.ExecContext(ctx, query,
+		user.Username,
+		user.Email,
+		user.PasswordHash,
+		user.Role,
+		user.Balance,
+	)
 	if err != nil {
 		return fmt.Errorf("failed to insert user: %w", err)
 	}
@@ -27,13 +33,13 @@ func (r *UserRepository) CreateUser(ctx context.Context, user *models.User) erro
 }
 
 func (r *UserRepository) GetUserByEmail(ctx context.Context, email string) (*models.User, error) {
-	query := `SELECT id, username, email, password_hash, role FROM users WHERE email = $1`
+	query := `SELECT id, username, email, password_hash, role, balance FROM users WHERE email = $1`
 	row := r.db.QueryRowContext(ctx, query, email)
 	var user models.User
-	err := row.Scan(&user.ID, &user.Username, &user.Email, &user.PasswordHash, &user.Role)
+	err := row.Scan(&user.ID, &user.Username, &user.Email, &user.PasswordHash, &user.Role, &user.Balance)
 	if err != nil {
 		if err == sql.ErrNoRows {
-			return nil, fmt.Errorf("user not found")
+			return nil, models.ErrUserNotFound
 		}
 		return nil, fmt.Errorf("failed to scan user: %w", err)
 	}
@@ -50,16 +56,13 @@ func (r *UserRepository) GetUserByID(ctx context.Context, id int) (*models.User,
 	)
 	if err != nil {
 		if err == sql.ErrNoRows {
-			return nil, fmt.Errorf("user not found")
+			return nil, models.ErrUserNotFound
 		}
 		return nil, fmt.Errorf("failed to get user: %w", err)
 	}
 	return &user, nil
 }
 
-// === НОВЫЕ МЕТОДЫ ДЛЯ АДМИНА ===
-
-// GetUsers возвращает список пользователей с пагинацией
 func (r *UserRepository) GetUsers(ctx context.Context, page, limit int) ([]models.User, int, error) {
 	if page < 1 {
 		page = 1
@@ -89,30 +92,22 @@ func (r *UserRepository) GetUsers(ctx context.Context, page, limit int) ([]model
 	}
 
 	var total int
-	countQuery := `SELECT COUNT(*) FROM users`
-	_ = r.db.QueryRowContext(ctx, countQuery).Scan(&total)
-
+	_ = r.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM users`).Scan(&total)
 	return users, total, nil
 }
 
-// UpdateUserBlocked блокирует/разблокирует пользователя
 func (r *UserRepository) UpdateUserBlocked(ctx context.Context, id int, blocked bool) error {
 	query := `UPDATE users SET blocked = $1, updated_at = NOW() WHERE id = $2`
 	result, err := r.db.ExecContext(ctx, query, blocked, id)
 	if err != nil {
 		return fmt.Errorf("failed to update user blocked status: %w", err)
 	}
-	rowsAffected, err := result.RowsAffected()
-	if err != nil {
-		return fmt.Errorf("failed to check rows affected: %w", err)
-	}
-	if rowsAffected == 0 {
-		return fmt.Errorf("user not found")
+	if rowsAffected, _ := result.RowsAffected(); rowsAffected == 0 {
+		return models.ErrUserNotFound
 	}
 	return nil
 }
 
-// GetUserWithBalance возвращает пользователя с балансом (для админа)
 func (r *UserRepository) GetUserWithBalance(ctx context.Context, id int) (*models.User, error) {
 	query := `SELECT id, username, email, role, balance, created_at, updated_at, blocked
 		FROM users WHERE id = $1`
@@ -123,7 +118,7 @@ func (r *UserRepository) GetUserWithBalance(ctx context.Context, id int) (*model
 	)
 	if err != nil {
 		if err == sql.ErrNoRows {
-			return nil, fmt.Errorf("user not found")
+			return nil, models.ErrUserNotFound
 		}
 		return nil, fmt.Errorf("failed to get user: %w", err)
 	}
